@@ -11,6 +11,9 @@ FastChess is a high-performance Python chess engine library built using ctypes, 
 
 - **Modular Design**: FastChess is designed with modularity in mind, allowing users to easily extend and customize its functionality to suit their specific needs.
 
+- **SVG**: FastChess support svg just like python-chess library.
+- ![fastboard](board.svg)
+
 ## Installation
 
 To install FastChess, simply clone the repository and run the setup script:
