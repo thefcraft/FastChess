@@ -37,10 +37,12 @@ class char_4096(c.Structure):
     _fields_ = [
             ('s', c.c_char * 4097)
         ]
-# class char_move(c.Structure):
-#     _fields_ = [
-#             ('s', c.c_char * 4)
-#         ]
+class move_list_t(c.Structure):
+    _fields_ = [
+            ('start', c.c_int),
+            ('end', c.c_int),
+            ('upgrade_type', c.c_char)
+        ]
 class Box64(c.Structure):
     _fields_ = [
             ('squares', c.c_bool * 64)
@@ -92,6 +94,24 @@ c_is_check.restype = c.c_bool
 c_legal_moves: callable = clibrary.legal_moves
 c_legal_moves.argtypes = [c.c_void_p]
 c_legal_moves.restype = char_4096
+
+c_minmax: callable = clibrary.minmax
+c_minmax.argtypes = [c.c_void_p, c.c_uint8, c.c_bool]
+c_minmax.restype = move_list_t
+
+c_minmax_slow: callable = clibrary.minmax_slow
+c_minmax_slow.argtypes = [c.c_void_p, c.c_uint8, c.c_bool]
+c_minmax_slow.restype = move_list_t
+
+
+
+c_alphabeta: callable = clibrary.alphabeta
+c_alphabeta.argtypes = [c.c_void_p, c.c_uint8, c.c_bool]
+c_alphabeta.restype = move_list_t
+
+c_alphabeta_no_pv: callable = clibrary.alphabeta_no_pv
+c_alphabeta_no_pv.argtypes = [c.c_void_p, c.c_uint8, c.c_bool]
+c_alphabeta_no_pv.restype = move_list_t
 
 UNICODE_PIECE_SYMBOLS = {
     "r": "♖", "R": "♜",
@@ -168,6 +188,11 @@ class Move:
         if len(raw) == 0: raise ValueError("raw is empty")
         uci = f'{get_square_name_from_pos(pos_decoder(int(raw[0])-1))}{get_square_name_from_pos(pos_decoder(int(raw[1])-1))}' # TODO
         return cls(uci=uci)
+    @classmethod
+    def from_move_t(cls, move_t:move_list_t):
+        start = move_t.start
+        end = move_t.end
+        return cls(from_square=start, to_square=end, promotion=move_t.upgrade_type.decode() if move_t.upgrade_type != '\x00' else None)
 
 class Piece:
     def __init__(self, piece):
@@ -603,4 +628,19 @@ class Board:
                     upgrade = False
                 else:
                     yield Move(pos_start, c-1)
-
+    def minmax(self, depth:int, debug=False):
+        return Move.from_move_t(c_minmax(self.state_ptr, depth, debug))
+    def minmax_slow(self, depth:int, debug=False):
+        return Move.from_move_t(c_minmax_slow(self.state_ptr, depth, debug))
+    
+    def alphabeta(self, depth:int, debug=False):
+        return Move.from_move_t(c_alphabeta(self.state_ptr, depth, debug))
+    def alphabeta_slow(self, depth:int, debug=False):
+        return Move.from_move_t(c_alphabeta_no_pv(self.state_ptr, depth, debug))
+    
+if __name__ == '__main__':
+    fen = None
+    fen = 'rnbqkbnr/pppppppP/8/8/8/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1'
+    board = Board(fen)
+    print(' '.join([mve.__repr__() for mve in board.legal_moves()]))
+    board.minmax(3, True)

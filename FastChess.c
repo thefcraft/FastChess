@@ -3,6 +3,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <stdlib.h> // qsort
+
 
 #define ulld unsigned long long int
 #define ushort unsigned short
@@ -25,6 +27,7 @@
 // 4) is_game_over = len(legal_moves) == 0 Done ...
 // 5) # DONE fen = '8/4Q1r1/2p3P1/3k1NP1/n5P1/4p3/5K2/B7 w - - 0 68' don't stop checks by killing something
 // 6) # DONE fen = '8/8/1b4p1/3q1k1p/1Pp1ppP1/2P4P/4QP2/2B2K2 b - g3 0 45' enpassant killing during check not working
+// MAY # BUG is_attackers_exclude_pos may not contain errors when casting or another thing happened as it not exclude other piece to exclude
 
 // .) # AI MINMAX Done ... # BUG
 // .) # AI ALPHABETA Done ... # TODO short moves to increase % of prunning # BUG
@@ -1265,600 +1268,1175 @@ void del_state(State *state)
     free(state);
 }
 
+int position_value(piece symbol, int square){
+    int WHITE_PAWN_PREFERRED_COORDINATES[] = {
+                0,  0,  0,  0,  0,  0,  0,  0,
+                90, 90, 90, 90, 90, 90, 90, 90,
+                30, 30, 40, 60, 60, 40, 30, 30,
+                10, 10, 20, 40, 40, 20, 10, 10,
+                5,  5, 10, 20, 20, 10,  5,  5,
+                0,  0,  0,-10,-10,  0,  0,  0,
+                5, -5,-10,  0,  0,-10, -5,  5,
+                0,  0,  0,  0,  0,  0,  0,  0
+    };
+    int BLACK_PAWN_PREFERRED_COORDINATES[] = {
+                0,  0,  0,  0,  0,  0,  0,  0,
+                5, -5,-10,  0,  0,-10, -5,  5,
+                0,  0,  0,-10,-10,  0,  0,  0,
+                5,  5, 10, 20, 20, 10,  5,  5,
+                10, 10, 20, 40, 40, 20, 10, 10,
+                30, 30, 40, 60, 60, 40, 30, 30,
+                90, 90, 90, 90, 90, 90, 90, 90,
+                0,  0,  0,  0,  0,  0,  0,  0
+    };
+    int WHITE_KNIGHT_PREFERRED_COORDINATES[] = {
+                -50,-40,-30,-30,-30,-30,-40,-50,
+                -40,-20,  0,  5,  5,  0,-20,-40,
+                -30,  5, 10, 15, 15, 10,  5,-30,
+                -30,  5, 15, 20, 20, 15,  5,-30,
+                -30,  5, 15, 20, 20, 15,  5,-30,
+                -30,  5, 10, 15, 15, 10,  5,-30,
+                -40,-20,  0,  0,  0,  0,-20,-40,
+                -50,-40,-30,-30,-30,-30,-40,-50
+    };
+    int BLACK_KNIGHT_PREFERRED_COORDINATES[] = {
+                -50,-40,-30,-30,-30,-30,-40,-50,
+                -40,-20,  0,  0,  0,  0,-20,-40,
+                -30,  5, 10, 15, 15, 10,  5,-30,
+                -30,  5, 15, 20, 20, 15,  5,-30,
+                -30,  5, 15, 20, 20, 15,  5,-30,
+                -30,  5, 10, 15, 15, 10,  5,-30,
+                -40,-20,  0,  5,  5,  0,-20,-40,
+                -50,-40,-30,-30,-30,-30,-40,-50,
+    };
+    int WHITE_BISHOP_PREFERRED_COORDINATES[] = {
+                -20,-10,-10,-10,-10,-10,-10,-20,
+                -10,  0,  0,  0,  0,  0,  0,-10,
+                -10,  0,  5, 10, 10,  5,  0,-10,
+                -10,  5,  5, 10, 10,  5,  5,-10,
+                -10,  0, 10, 15, 15, 10,  0,-10,
+                -10, 10, 10, 10, 10, 10, 10,-10,
+                -10,  5,  0,  0,  0,  0,  5,-10,
+                -20,-10,-10,-10,-10,-10,-10,-20
+    };
+    int BLACK_BISHOP_PREFERRED_COORDINATES[] = {
+                -20,-10,-10,-10,-10,-10,-10,-20,
+                -10,  5,  0,  0,  0,  0,  5,-10,
+                -10, 10, 10, 10, 10, 10, 10,-10,
+                -10,  0, 10, 15, 15, 10,  0,-10,
+                -10,  5, 10, 15, 15, 10,  5,-10,
+                -10,  0, 10, 10, 10, 10,  0,-10,
+                -10,  0,  0,  0,  0,  0,  0,-10,
+                -20,-10,-10,-10,-10,-10,-10,-20
+    };
+    int WHITE_ROOK_PREFERRED_COORDINATES[] = {
+                0,  0,  0,  0,  0,  0,  0,  0,
+                5, 20, 20, 20, 20, 20, 20,  5,
+                -5,  0,  0,  0,  0,  0,  0, -5,
+                -5,  0,  0,  0,  0,  0,  0, -5,
+                -5,  0,  0,  0,  0,  0,  0, -5,
+                -5,  0,  0,  0,  0,  0,  0, -5,
+                -5,  0,  0,  0,  0,  0,  0, -5,
+                0,  0,  0,  5,  5,  0,  0,  0
+    };
+    int BLACK_ROOK_PREFERRED_COORDINATES[] = {
+                0,  0,  0,  5,  5,  0,  0,  0,
+                -5,  0,  0,  0,  0,  0,  0, -5,
+                -5,  0,  0,  0,  0,  0,  0, -5,
+                -5,  0,  0,  0,  0,  0,  0, -5,
+                -5,  0,  0,  0,  0,  0,  0, -5,
+                -5,  0,  0,  0,  0,  0,  0, -5,
+                5, 20, 20, 20, 20, 20, 20,  5,
+                0,  0,  0,  0,  0,  0,  0,  0,
+    };
+    int WHITE_QUEEN_PREFERRED_COORDINATES[] = {
+                -20,-10,-10, -5, -5,-10,-10,-20,
+                -10,  0,  0,  0,  0,  0,  0,-10,
+                -10,  0,  5,  5,  5,  5,  0,-10,
+                -5,  0,  5, 10, 10,  5,  0, -5,
+                -5,  0,  5, 10, 10,  5,  0, -5,
+                -10,  0,  5,  5,  5,  5,  0,-10,
+                -10,  0,  0,  0,  0,  0,  0,-10,
+                -20,-10,-10, -5, -5,-10,-10,-20
+    };
+    int BLACK_QUEEN_PREFERRED_COORDINATES[] = {
+                -20,-10,-10, -5, -5,-10,-10,-20,
+                -10,  0,  5,  0,  0,  0,  0,-10,
+                -10,  5,  5,  5,  5,  5,  0,-10,
+                -5,  0,  5, 10, 10,  5,  0, -5,
+                -5,  0,  5, 10, 10,  5,  0, -5,
+                -10,  0,  5,  5,  5,  5,  0,-10,
+                -10,  0,  0,  0,  0,  0,  0,-10,
+                -20,-10,-10, -5, -5,-10,-10,-20
+    };
+    int WHITE_KING_PREFERRED_COORDINATES[] = {
+                -50,-30,-30,-30,-30,-30,-30,-50,
+                -30,-30,  0,  0,  0,  0,-30,-30,
+                -30,-10, 20, 30, 30, 20,-10,-30,
+                -30,-10, 30, 40, 40, 30,-10,-30,
+                -30,-10, 30, 40, 40, 30,-10,-30,
+                -30,-10, 20, 30, 30, 20,-10,-30,
+                -30,-20,-10,  0,  0,-10,-20,-30,
+                -50,-40,-30,-20,-20,-30,-40,-50
+    };
+    int BLACK_KING_PREFERRED_COORDINATES[] = {
+                -50,-40,-30,-20,-20,-30,-40,-50,
+                -30,-20,-10,  0,  0,-10,-20,-30,
+                -30,-10, 20, 30, 30, 20,-10,-30,
+                -30,-10, 30, 40, 40, 30,-10,-30,
+                -30,-10, 30, 40, 40, 30,-10,-30,
+                -30,-10, 20, 30, 30, 20,-10,-30,
+                -30,-30,  0,  0,  0,  0,-30,-30,
+                -50,-30,-30,-30,-30,-30,-30,-50
+    };
+
+    square = pos_decoder(63-square);
+    switch (symbol)
+    {
+        case 'p': return -BLACK_PAWN_PREFERRED_COORDINATES[square];
+        case 'P': return WHITE_PAWN_PREFERRED_COORDINATES[square];
+        case 'r': return -BLACK_ROOK_PREFERRED_COORDINATES[square];
+        case 'R': return WHITE_ROOK_PREFERRED_COORDINATES[square];
+        case 'b': return -BLACK_BISHOP_PREFERRED_COORDINATES[square];
+        case 'B': return WHITE_BISHOP_PREFERRED_COORDINATES[square];
+        case 'n': return -BLACK_KNIGHT_PREFERRED_COORDINATES[square];
+        case 'N': return WHITE_KNIGHT_PREFERRED_COORDINATES[square];
+        case 'q': return -BLACK_QUEEN_PREFERRED_COORDINATES[square];
+        case 'Q': return WHITE_QUEEN_PREFERRED_COORDINATES[square];
+        case 'k': return -BLACK_KING_PREFERRED_COORDINATES[square];
+        case 'K': return WHITE_KING_PREFERRED_COORDINATES[square];
+        default: return 0;
+    }
+}
+int piece_value_mod(piece symbol){
+    switch (symbol)
+    {
+        case 'p': return 100;
+        case 'P': return 100;
+        case 'r': return 500;
+        case 'R': return 500;
+        case 'b': return 300;
+        case 'B': return 300;
+        case 'n': return 300;
+        case 'N': return 300;
+        case 'q': return 900;
+        case 'Q': return 900;
+        case 'k': return 10000;
+        case 'K': return 10000;
+        default: return 0;
+    }
+}
+int piece_value(piece symbol){
+    switch (symbol)
+    {
+        case 'p': return -100;
+        case 'P': return 100;
+        case 'r': return -500;
+        case 'R': return 500;
+        case 'b': return -300;
+        case 'B': return 300;
+        case 'n': return -300;
+        case 'N': return 300;
+        case 'q': return -900;
+        case 'Q': return 900;
+        case 'k': return -10000;
+        case 'K': return 10000;
+        default: return 0;
+    }
+}
+bool is_game_over(State* state){
+    return strlen(legal_moves(state).s) == 0;
+}
+short int winner(State *state){
+    // TODO if attacker at black_pos # return WHITE
+    for (int i = 0; i < 64; i++)
+    {
+        if ((state->WHITE_KING>>i)&one)
+        {
+            if(is_attackers(state, i, false)) return -1;
+            break;
+        }
+    }
+    for (int i = 0; i < 64; i++)
+    {
+        if ((state->BLACK_KING>>i)&one){
+            if(is_attackers(state, i, true)) return 1;
+            break;
+        }
+    }
+    return 0;
+}
+int evaluate_board(State *state){
+    int evaluation = 0;
+    for (int square = 0; square < 64; square++)
+    {
+        piece pce = piece_at(state, square);
+        if (pce == '.') continue;
+        evaluation += piece_value(pce);
+        evaluation += position_value(pce, square);
+    }
+    return evaluation;
+}
+
+typedef struct move_list_t{
+    int start;
+    int end;
+    piece upgrade_type; // default '\0'
+} move_list_t;
+
+bool move_list_t_is_equal(move_list_t *a, move_list_t *b){
+    return a->start == b->start && a->end == b->end && a->upgrade_type == b->upgrade_type;
+}
+
+int len_move_list(State *state){
+    ulld pieces = piece_map(state, state->whiteTurn);
+    int idx = 0;
+    for (int pos_start = 0; pos_start < 64; pos_start++) if ((pieces>>pos_start) & 1){
+        move moves = legal_move_by_square_helper(state, pos_decoder(pos_start));
+        if(moves){
+            for (int pos_end = 0; pos_end < 64; pos_end++) if ((moves>>pos_end) & 1){
+                if (state->whiteTurn && pos_end / BOARD_SIZE == 7 && ((state->WHITE_PAWN>>pos_start)&one)) {
+                    idx++;
+                    idx++;
+                    idx++;
+                    idx++;
+                }
+                else if (!state->whiteTurn && pos_end / BOARD_SIZE == 0 && ((state->BLACK_PAWN>>pos_start)&one)){
+                    idx++;
+                    idx++;
+                    idx++;
+                    idx++;
+                }
+                else{
+                    idx++;
+                }
+            }
+        }   
+    }
+    return idx;
+}
+
+void set_move_list(State *state, move_list_t list[], int n){
+    ulld pieces = piece_map(state, state->whiteTurn);
+    int idx = 0;
+    for (int pos_start = 0; pos_start < 64; pos_start++) if ((pieces>>pos_start) & 1){
+        move moves = legal_move_by_square_helper(state, pos_decoder(pos_start));
+        if(moves){
+            for (int pos_end = 0; pos_end < 64; pos_end++) if ((moves>>pos_end) & 1){
+                if (state->whiteTurn && pos_end / BOARD_SIZE == 7 && ((state->WHITE_PAWN>>pos_start)&one)) {
+                    list[idx].start = pos_decoder(pos_start);
+                    list[idx].end = pos_decoder(pos_end);
+                    list[idx++].upgrade_type = 'Q';
+
+                    list[idx].start = pos_decoder(pos_start);
+                    list[idx].end = pos_decoder(pos_end);
+                    list[idx++].upgrade_type = 'N';
+                    
+                    list[idx].start = pos_decoder(pos_start);
+                    list[idx].end = pos_decoder(pos_end);
+                    list[idx++].upgrade_type = 'B';
+                    
+                    list[idx].start = pos_decoder(pos_start);
+                    list[idx].end = pos_decoder(pos_end);
+                    list[idx++].upgrade_type = 'R';
+                }
+                else if (!state->whiteTurn && pos_end / BOARD_SIZE == 0 && ((state->BLACK_PAWN>>pos_start)&one)){
+                    list[idx].start = pos_decoder(pos_start);
+                    list[idx].end = pos_decoder(pos_end);
+                    list[idx++].upgrade_type = 'q';
+
+                    list[idx].start = pos_decoder(pos_start);
+                    list[idx].end = pos_decoder(pos_end);
+                    list[idx++].upgrade_type = 'n';
+                    
+                    list[idx].start = pos_decoder(pos_start);
+                    list[idx].end = pos_decoder(pos_end);
+                    list[idx++].upgrade_type = 'b';
+                    
+                    list[idx].start = pos_decoder(pos_start);
+                    list[idx].end = pos_decoder(pos_end);
+                    list[idx++].upgrade_type = 'r';
+                }
+                else{
+                    list[idx].start = pos_decoder(pos_start);
+                    list[idx].end = pos_decoder(pos_end);
+                    list[idx++].upgrade_type = '\0';
+                }
+            }
+        }   
+    }
+    if (idx>n) printf("ERROR: in set_move_list as n is greater than idx\n");
+}
+bool is_NullMove(move_list_t mve){
+    return mve.start==-1 && mve.end==-1 && mve.upgrade_type == '\0';
+}
+void print_move_t(move_list_t mve){
+    if (!is_NullMove(mve)){
+        int start = mve.start;
+        int end = mve.end;
+        printf("%c%d%c%d", ((start % 8) + 97), (start / 8) + 1,
+                        ((end % 8) + 97), (end / 8) + 1);
+        if(mve.upgrade_type!='\0') putchar(mve.upgrade_type);
+    }
+}
+void print_move_list(move_list_t list[], int n){
+    for (int i = 0; i < n; i++)
+    {
+        print_move_t(list[i]);
+        putchar(' ');
+    }
+    putchar('\n');
+}
+
+void push_move(State *state, int start, int end, piece upgrade_type){
+    push_move_by_square(state, start, end);
+    if (upgrade_type != '\0') upgrade_pawn(state, end, upgrade_type);
+}
+void push_move_t(State *state, move_list_t move_t){
+    push_move(state, move_t.start, move_t.end, move_t.upgrade_type);
+}
+
+int minmax_helper_slow(State *state, unsigned short int depth, int *num_fn_calls, double *time_generate_move, double *time_board_copy, double *time_push_move, double *time_other){
+    clock_t time_generate_move_start = clock();
+
+    int len_legal_move = len_move_list(state);
+    if (len_legal_move==0){
+        switch (winner(state))
+        {
+            case 1: return 10000+depth;
+            case -1: return -10000-depth;
+            default: return 0;
+        }
+    }
+    else if (depth == 0) return evaluate_board(state);
+
+    move_list_t move_list[len_legal_move]; 
+
+    set_move_list(state, move_list, len_legal_move);
+    *time_generate_move += (double)(clock() - time_generate_move_start) / CLOCKS_PER_SEC;
+
+    int best_score;
+    if (state->whiteTurn) best_score = -100000;
+    else best_score = 100000;
+
+    for(int idx = 0; idx < len_legal_move; idx++){
+        clock_t time_board_copy_start = clock();
+        State *tmp = copy_state(state);
+        *time_board_copy += (double)(clock() - time_board_copy_start) / CLOCKS_PER_SEC;
+        *num_fn_calls += 1;
+        
+        clock_t time_push_move_start = clock();
+        push_move_t(tmp, move_list[idx]);
+        *time_push_move += (double)(clock() - time_push_move_start) / CLOCKS_PER_SEC;
+
+        clock_t time_helper_call_start = clock();
+        int score = minmax_helper_slow(tmp, depth-1, num_fn_calls, time_generate_move, time_board_copy, time_push_move, time_other);
+        *time_other -= (double)(clock() - time_helper_call_start) / CLOCKS_PER_SEC;
+        
+        if (state->whiteTurn && score > best_score) best_score = score;
+        else if(!state->whiteTurn && score < best_score) best_score = score;
+
+        del_state(tmp);
+        
+    }
+    *time_other += (double)(clock() - time_generate_move_start) / CLOCKS_PER_SEC;
+    return best_score;
+}
+// TODO recursive function taking too much time...
+move_list_t minmax_slow(State *state, unsigned short int depth, bool debug){
+    clock_t time_start = clock();
+    int bestmove_idx;
+    int num_fn_calls = 0;
+    double time_generate_move = 0;
+    double time_board_copy = 0;
+    double time_push_move = 0;
+    double time_other = 0;
+    double time_helper_call = 0;
+
+    clock_t time_generate_move_start = clock();
+
+    int len_legal_move = len_move_list(state);
+    move_list_t move_list[len_legal_move]; 
+
+    set_move_list(state, move_list, len_legal_move);
+    time_generate_move += (double)(clock() - time_generate_move_start) / CLOCKS_PER_SEC;
+
+    int best_score;
+    if (state->whiteTurn) best_score = -100000;
+    else best_score = 100000;
+
+    for(int idx = 0; idx < len_legal_move; idx++){
+        clock_t time_board_copy_start = clock();
+        State *tmp = copy_state(state);
+        time_board_copy += (double)(clock() - time_board_copy_start) / CLOCKS_PER_SEC;
+        
+        num_fn_calls++;
+
+        clock_t time_push_move_start = clock();
+        push_move_t(tmp, move_list[idx]);
+        time_push_move += (double)(clock() - time_push_move_start) / CLOCKS_PER_SEC;
+
+        clock_t time_helper_call_start = clock();
+        int score = minmax_helper_slow(tmp, depth-1, &num_fn_calls, &time_generate_move, &time_board_copy, &time_push_move, &time_other);
+        time_helper_call += (double)(clock() - time_helper_call_start) / CLOCKS_PER_SEC;
+        time_other -= (double)(clock() - time_helper_call_start) / CLOCKS_PER_SEC;
 
 
+        if (state->whiteTurn && score > best_score) {
+            best_score = score;
+            bestmove_idx = idx;
+        }
+        else if(!state->whiteTurn && score < best_score) {
+            best_score = score;
+            bestmove_idx = idx;
+        }
 
+        del_state(tmp);
+    }
+    time_other += (double)(clock() - time_generate_move_start) / CLOCKS_PER_SEC;
 
+    move_list_t bestmove = move_list[bestmove_idx];
+    double elapsed_time = (double)(clock() - time_start) / CLOCKS_PER_SEC;
+    if (debug)
+    {
+        printf("ETA: %.2f ms\n", elapsed_time*1000);
+        printf("NPS: %.6f\n", ((double)num_fn_calls)/elapsed_time);
+        printf("TOTAL NODES: %d\n", num_fn_calls);
+        printf("MOVE: "); print_move_t(bestmove);
+        putchar('\n');
+        printf("PROFILE: \n");
+        printf("ETA move_generated: %.2f ms\n", time_generate_move*1000);
+        printf("ETA board_copy: %.2f ms\n", time_board_copy*1000);
+        printf("ETA push_move: %.2f ms\n", time_push_move*1000);
+        printf("ETA other: %.2f ms\n", time_other*1000);
+        printf("ETA helper_call: %.2f ms\n", time_helper_call*1000);
+        
+    }
+    return bestmove;
+}
 
+int minmax_helper(State *state, unsigned short int depth, int *num_fn_calls){
+    if (is_game_over(state)){
+        switch (winner(state))
+        {
+            case 1: return 10000+depth;
+            case -1: return -10000-depth;
+            default: return 0;
+        }
+    }
+    else if (depth == 0) return evaluate_board(state);
 
+    if (state->whiteTurn){
+        int maxscore = -100000;
 
+        ulld pieces = piece_map(state, state->whiteTurn);
+        int idx = 0;
+        for (int pos_start = 0; pos_start < 64; pos_start++) if ((pieces>>pos_start) & 1){
+            move moves = legal_move_by_square_helper(state, pos_decoder(pos_start));
+            if(moves){
+                for (int pos_end = 0; pos_end < 64; pos_end++) if ((moves>>pos_end) & 1){
+                    if (state->whiteTurn && pos_end / BOARD_SIZE == 7 && ((state->WHITE_PAWN>>pos_start)&one)) {
+                        State *tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'Q');
+                        int score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score > maxscore) maxscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'N');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score > maxscore) maxscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'B');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score > maxscore) maxscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'R');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score > maxscore) maxscore = score;
+                        del_state(tmp);
+                    }
+                    else if (!state->whiteTurn && pos_end / BOARD_SIZE == 0 && ((state->BLACK_PAWN>>pos_start)&one)){
+                        State *tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'q');
+                        int score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score > maxscore) maxscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'n');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score > maxscore) maxscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'b');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score > maxscore) maxscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'r');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score > maxscore) maxscore = score;
+                        del_state(tmp);
+                    }
+                    else{
+                        State *tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), '\0');
+                        int score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score > maxscore) maxscore = score;
+                        del_state(tmp);
+                    }
+                }
+            }   
+        }
+        
+        return maxscore;
+    }else{
+        int minscore = 100000;
 
+        ulld pieces = piece_map(state, state->whiteTurn);
+        int idx = 0;
+        for (int pos_start = 0; pos_start < 64; pos_start++) if ((pieces>>pos_start) & 1){
+            move moves = legal_move_by_square_helper(state, pos_decoder(pos_start));
+            if(moves){
+                for (int pos_end = 0; pos_end < 64; pos_end++) if ((moves>>pos_end) & 1){
+                    if (state->whiteTurn && pos_end / BOARD_SIZE == 7 && ((state->WHITE_PAWN>>pos_start)&one)) {
+                        State *tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'Q');
+                        int score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score < minscore) minscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'N');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score < minscore) minscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'B');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score < minscore) minscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'R');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score < minscore) minscore = score;
+                        del_state(tmp);
+                    }
+                    else if (!state->whiteTurn && pos_end / BOARD_SIZE == 0 && ((state->BLACK_PAWN>>pos_start)&one)){
+                        State *tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'q');
+                        int score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score < minscore) minscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'n');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score < minscore) minscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'b');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score < minscore) minscore = score;
+                        del_state(tmp);
 
+                        tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'r');
+                        score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score < minscore) minscore = score;
+                        del_state(tmp);
+                    }
+                    else{
+                        State *tmp = copy_state(state);
+                        *num_fn_calls = *num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), '\0');
+                        int score = minmax_helper(tmp, depth-1, num_fn_calls);
+                        if (score < minscore) minscore = score;
+                        del_state(tmp);
+                    }
+                }
+            }   
+        }
+        
+        return minscore;
+    }
 
+}
+move_list_t minmax(State *state, unsigned short int depth, bool debug){
+    clock_t time_start = clock();
+    move_list_t bestmove;
+    int num_fn_calls = 0;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// NOT IMPLEMENTED YET
-// int WHITE_PAWN_PREFERRED_COORDINATES[] = {
-//             0,  0,  0,  0,  0,  0,  0,  0,
-//             90, 90, 90, 90, 90, 90, 90, 90,
-//             30, 30, 40, 60, 60, 40, 30, 30,
-//             10, 10, 20, 40, 40, 20, 10, 10,
-//             5,  5, 10, 20, 20, 10,  5,  5,
-//             0,  0,  0,-10,-10,  0,  0,  0,
-//             5, -5,-10,  0,  0,-10, -5,  5,
-//             0,  0,  0,  0,  0,  0,  0,  0
-// };
-// int BLACK_PAWN_PREFERRED_COORDINATES[] = {
-//             0,  0,  0,  0,  0,  0,  0,  0,
-//             5, -5,-10,  0,  0,-10, -5,  5,
-//             0,  0,  0,-10,-10,  0,  0,  0,
-//             5,  5, 10, 20, 20, 10,  5,  5,
-//             10, 10, 20, 40, 40, 20, 10, 10,
-//             30, 30, 40, 60, 60, 40, 30, 30,
-//             90, 90, 90, 90, 90, 90, 90, 90,
-//             0,  0,  0,  0,  0,  0,  0,  0
-// };
-// int WHITE_KNIGHT_PREFERRED_COORDINATES[] = {
-//             -50,-40,-30,-30,-30,-30,-40,-50,
-//             -40,-20,  0,  5,  5,  0,-20,-40,
-//             -30,  5, 10, 15, 15, 10,  5,-30,
-//             -30,  5, 15, 20, 20, 15,  5,-30,
-//             -30,  5, 15, 20, 20, 15,  5,-30,
-//             -30,  5, 10, 15, 15, 10,  5,-30,
-//             -40,-20,  0,  0,  0,  0,-20,-40,
-//             -50,-40,-30,-30,-30,-30,-40,-50
-// };
-// int BLACK_KNIGHT_PREFERRED_COORDINATES[] = {
-//             -50,-40,-30,-30,-30,-30,-40,-50,
-//             -40,-20,  0,  0,  0,  0,-20,-40,
-//             -30,  5, 10, 15, 15, 10,  5,-30,
-//             -30,  5, 15, 20, 20, 15,  5,-30,
-//             -30,  5, 15, 20, 20, 15,  5,-30,
-//             -30,  5, 10, 15, 15, 10,  5,-30,
-//             -40,-20,  0,  5,  5,  0,-20,-40,
-//             -50,-40,-30,-30,-30,-30,-40,-50,
-// };
-// int WHITE_BISHOP_PREFERRED_COORDINATES[] = {
-//             -20,-10,-10,-10,-10,-10,-10,-20,
-//             -10,  0,  0,  0,  0,  0,  0,-10,
-//             -10,  0,  5, 10, 10,  5,  0,-10,
-//             -10,  5,  5, 10, 10,  5,  5,-10,
-//             -10,  0, 10, 15, 15, 10,  0,-10,
-//             -10, 10, 10, 10, 10, 10, 10,-10,
-//             -10,  5,  0,  0,  0,  0,  5,-10,
-//             -20,-10,-10,-10,-10,-10,-10,-20
-// };
-// int BLACK_BISHOP_PREFERRED_COORDINATES[] = {
-//             -20,-10,-10,-10,-10,-10,-10,-20,
-//             -10,  5,  0,  0,  0,  0,  5,-10,
-//             -10, 10, 10, 10, 10, 10, 10,-10,
-//             -10,  0, 10, 15, 15, 10,  0,-10,
-//             -10,  5, 10, 15, 15, 10,  5,-10,
-//             -10,  0, 10, 10, 10, 10,  0,-10,
-//             -10,  0,  0,  0,  0,  0,  0,-10,
-//             -20,-10,-10,-10,-10,-10,-10,-20
-// };
-// int WHITE_ROOK_PREFERRED_COORDINATES[] = {
-//             0,  0,  0,  0,  0,  0,  0,  0,
-//             5, 20, 20, 20, 20, 20, 20,  5,
-//             -5,  0,  0,  0,  0,  0,  0, -5,
-//             -5,  0,  0,  0,  0,  0,  0, -5,
-//             -5,  0,  0,  0,  0,  0,  0, -5,
-//             -5,  0,  0,  0,  0,  0,  0, -5,
-//             -5,  0,  0,  0,  0,  0,  0, -5,
-//             0,  0,  0,  5,  5,  0,  0,  0
-// };
-// int BLACK_ROOK_PREFERRED_COORDINATES[] = {
-//             0,  0,  0,  5,  5,  0,  0,  0,
-//             -5,  0,  0,  0,  0,  0,  0, -5,
-//             -5,  0,  0,  0,  0,  0,  0, -5,
-//             -5,  0,  0,  0,  0,  0,  0, -5,
-//             -5,  0,  0,  0,  0,  0,  0, -5,
-//             -5,  0,  0,  0,  0,  0,  0, -5,
-//             5, 20, 20, 20, 20, 20, 20,  5,
-//             0,  0,  0,  0,  0,  0,  0,  0,
-// };
-// int WHITE_QUEEN_PREFERRED_COORDINATES[] = {
-//             -20,-10,-10, -5, -5,-10,-10,-20,
-//             -10,  0,  0,  0,  0,  0,  0,-10,
-//             -10,  0,  5,  5,  5,  5,  0,-10,
-//             -5,  0,  5, 10, 10,  5,  0, -5,
-//             -5,  0,  5, 10, 10,  5,  0, -5,
-//             -10,  0,  5,  5,  5,  5,  0,-10,
-//             -10,  0,  0,  0,  0,  0,  0,-10,
-//             -20,-10,-10, -5, -5,-10,-10,-20
-// };
-// int BLACK_QUEEN_PREFERRED_COORDINATES[] = {
-//             -20,-10,-10, -5, -5,-10,-10,-20,
-//             -10,  0,  5,  0,  0,  0,  0,-10,
-//             -10,  5,  5,  5,  5,  5,  0,-10,
-//             -5,  0,  5, 10, 10,  5,  0, -5,
-//             -5,  0,  5, 10, 10,  5,  0, -5,
-//             -10,  0,  5,  5,  5,  5,  0,-10,
-//             -10,  0,  0,  0,  0,  0,  0,-10,
-//             -20,-10,-10, -5, -5,-10,-10,-20
-// };
-// int WHITE_KING_PREFERRED_COORDINATES[] = {
-//             -50,-30,-30,-30,-30,-30,-30,-50,
-//             -30,-30,  0,  0,  0,  0,-30,-30,
-//             -30,-10, 20, 30, 30, 20,-10,-30,
-//             -30,-10, 30, 40, 40, 30,-10,-30,
-//             -30,-10, 30, 40, 40, 30,-10,-30,
-//             -30,-10, 20, 30, 30, 20,-10,-30,
-//             -30,-20,-10,  0,  0,-10,-20,-30,
-//             -50,-40,-30,-20,-20,-30,-40,-50
-// };
-// int BLACK_KING_PREFERRED_COORDINATES[] = {
-//             -50,-40,-30,-20,-20,-30,-40,-50,
-//             -30,-20,-10,  0,  0,-10,-20,-30,
-//             -30,-10, 20, 30, 30, 20,-10,-30,
-//             -30,-10, 30, 40, 40, 30,-10,-30,
-//             -30,-10, 30, 40, 40, 30,-10,-30,
-//             -30,-10, 20, 30, 30, 20,-10,-30,
-//             -30,-30,  0,  0,  0,  0,-30,-30,
-//             -50,-30,-30,-30,-30,-30,-30,-50
-// };
-// int position_value(piece symbol, int square){
-//     square = pos_decoder(63-square);
-//     switch (symbol)
-//     {
-//         case 'p': return -BLACK_PAWN_PREFERRED_COORDINATES[square];
-//         case 'P': return WHITE_PAWN_PREFERRED_COORDINATES[square];
-//         case 'r': return -BLACK_ROOK_PREFERRED_COORDINATES[square];
-//         case 'R': return WHITE_ROOK_PREFERRED_COORDINATES[square];
-//         case 'b': return -BLACK_BISHOP_PREFERRED_COORDINATES[square];
-//         case 'B': return WHITE_BISHOP_PREFERRED_COORDINATES[square];
-//         case 'n': return -BLACK_KNIGHT_PREFERRED_COORDINATES[square];
-//         case 'N': return WHITE_KNIGHT_PREFERRED_COORDINATES[square];
-//         case 'q': return -BLACK_QUEEN_PREFERRED_COORDINATES[square];
-//         case 'Q': return WHITE_QUEEN_PREFERRED_COORDINATES[square];
-//         case 'k': return -BLACK_KING_PREFERRED_COORDINATES[square];
-//         case 'K': return WHITE_KING_PREFERRED_COORDINATES[square];
-//         default: return 0;
-//     }
-// }
-// int piece_value(piece symbol){
-//     switch (symbol)
-//     {
-//         case 'p': return -100;
-//         case 'P': return 100;
-//         case 'r': return -500;
-//         case 'R': return 500;
-//         case 'b': return -300;
-//         case 'B': return 300;
-//         case 'n': return -300;
-//         case 'N': return 300;
-//         case 'q': return -900;
-//         case 'Q': return 900;
-//         case 'k': return -10000;
-//         case 'K': return 10000;
-//         default: return 0;
-//     }
-// }
-// bool is_game_over(State* state){
-//     return strlen(legal_moves(state).s) == 0;
-// }
-// short int winner(State *state){
-//     // TODO if attacker at black_pos # return WHITE
-//     for (int i = 0; i < 64; i++)
-//     {
-//         if ((state->WHITE_KING>>i)&one)
-//         {
-//             if(is_attackers(state, i, false)) return -1;
-//             break;
-//         }
-//     }
-//     for (int i = 0; i < 64; i++)
-//     {
-//         if ((state->BLACK_KING>>i)&one){
-//             if(is_attackers(state, i, true)) return 1;
-//             break;
-//         }
-//     }
-//     return 0;
-// }
-// int evaluate_board(State *state){
-//     int evaluation = 0;
-//     if (is_game_over(state))
-//     {
-//         switch (winner(state))
-//         {
-//             case 1: return 10000;
-//             case -1: return -10000;
-//             default: return 0;
-//         }
-//     }
-//     for (int square = 0; square < 64; square++)
-//     {
-//         piece pce = piece_at(state, square);
-//         if (pce == '.') continue;
-//         evaluation += piece_value(pce);
-//         evaluation += position_value(pce, square);
-//     }
-//     return evaluation;
-// }
-
-// TODO
-// typedef struct char_move{
-    // start, end, upgrade
-    // char s[4];
-// } char_move;
-
-// // TODO able to acchieve 140k nodes per second...
-// // TODO # BUG IN AI use legal move char_4096 instead...
-// // BUT NOW THEY DECREASE to 70k nodes per second as i changed my implementation to char_4096 instead of raw moves...
-
-// int len_legal_moves(char_4096 *moves){
-//     char *s = moves->s;
-//     int result=0;
-//     bool upgrade;
-//     bool upgrade_color;
-//     int pos_start;
-//     printf("%d", strlen(s));
-//     for (int i = 0; i < strlen(s); i++)
-//     {
-//         // printf("%d ", s[i]);
-//         if (s[i] == 201)
-//         {
-//             upgrade = true;
-//             upgrade_color = WHITE;
-//         }else if (s[i] == 202)
-//         {
-//             upgrade = true;
-//             upgrade_color = BLACK;
-//         }
-//         else if (s[i] > 100){
-//             pos_start = s[i]-101;
-//             upgrade = false;
-//         }
-//         else{
-//             if(upgrade){
-//                 result+=4;
-//                 upgrade = false;
-//             }   
-//             else result++;
-//         }
-//     }
-//     return result;
-// }
-
-// typedef struct square_name{
-//     char file;
-//     int rank;
-// }square_name;
-// struct square_name get_square_name_from_pos(int pos){
-//     char rank = (pos / 8) + 1;
-//     char file = ((pos % 8) + 97);
-//     square_name result;
-//     result.file = file;
-//     result.rank = rank;
-//     return result;
-// }
-// void init_char_moves(char_move *moves, char *s){
-//     int idx = 0;
-//     bool upgrade;
-//     bool upgrade_color;
-//     int pos_start;
-//     for (int i = 0; i < strlen(s); i++)
-//     {
-//         if (s[i] == 201)
-//         {
-//             upgrade = true;
-//             upgrade_color = WHITE;
-//         }else if (s[i] == 202)
-//         {
-//             upgrade = true;
-//             upgrade_color = BLACK;
-//         }
-//         else if (s[i] > 100){
-//             pos_start = s[i]-101;
-//             upgrade = false;
-//         }
-//         else{
-//             if(upgrade){
-//                 // printf("");
-//                 if (upgrade_color)
-//                 {
-//                     moves[idx].s[0] = pos_start;
-//                     moves[idx].s[1] = s[i]-1;
-//                     moves[idx].s[2] = 'Q';
-//                     moves[idx].s[3] = '\0';
-//                     idx++;
-//                     moves[idx].s[0] = pos_start;
-//                     moves[idx].s[1] = s[i]-1;
-//                     moves[idx].s[2] = 'N';
-//                     moves[idx].s[3] = '\0';
-//                     idx++;
-//                     moves[idx].s[0] = pos_start;
-//                     moves[idx].s[1] = s[i]-1;
-//                     moves[idx].s[2] = 'B';
-//                     moves[idx].s[3] = '\0';
-//                     idx++;
-//                     moves[idx].s[0] = pos_start;
-//                     moves[idx].s[1] = s[i]-1;
-//                     moves[idx].s[2] = 'R';
-//                     moves[idx].s[3] = '\0';
-//                     idx++;
-//                 }
-//                 else{
-//                     moves[idx].s[0] = pos_start;
-//                     moves[idx].s[1] = s[i]-1;
-//                     moves[idx].s[2] = 'q';
-//                     moves[idx].s[3] = '\0';
-//                     idx++;
-//                     moves[idx].s[0] = pos_start;
-//                     moves[idx].s[1] = s[i]-1;
-//                     moves[idx].s[2] = 'n';
-//                     moves[idx].s[3] = '\0';
-//                     idx++;
-//                     moves[idx].s[0] = pos_start;
-//                     moves[idx].s[1] = s[i]-1;
-//                     moves[idx].s[2] = 'b';
-//                     moves[idx].s[3] = '\0';
-//                     idx++;
-//                     moves[idx].s[0] = pos_start;
-//                     moves[idx].s[1] = s[i]-1;
-//                     moves[idx].s[2] = 'r';
-//                     moves[idx].s[3] = '\0';
-//                     idx++;
-//                 }
-//                 upgrade = false;
-//             }   
-//             else{
-//                 moves[idx].s[0] = pos_start;
-//                 moves[idx].s[1] = s[i]-1;
-//                 moves[idx].s[2] = '\0';
-//                 moves[idx].s[3] = '\0';
-//                 idx++;
-//             }
-//         }
-//     }
-// }
-// void print_char_move(char_move mve){
-//     printf("%c%d%c%d%c", get_square_name_from_pos(mve.s[0]).file, get_square_name_from_pos(mve.s[0]).rank
-//                        , get_square_name_from_pos(mve.s[1]).file, get_square_name_from_pos(mve.s[1]).rank, mve.s[2]);
-// }
-// void print_legal_moves(State *state){
-//     char_4096 all_moves = legal_moves(state);
-//     const int length = len_legal_moves(&all_moves);
-//     printf("LEN: %d\n", length);
-//     char_move moves[length];
-//     init_char_moves(moves, all_moves.s);
-//     for (int i = 0; i < length; i++)
-//     {
-//         print_char_move(moves[i]);
-//         putchar(' ');
-//     }
-//     putchar('\n');
-// }
-
-// void push_char_move(State *state, char_move mve){
-//     push_move_by_square(state, mve.s[0], mve.s[1]);
-//     if (mve.s[2]!='\0') upgrade_pawn(state, mve.s[1], mve.s[2]);
-// }
-
-// int minmax_helper(State *state, unsigned short int depth, bool player, int *num_fn_calls){
-//     char_4096 all_moves = legal_moves(state);
-//     const int length = len_legal_moves(&all_moves);
-//     if (depth == 0 || length==0) return evaluate_board(state);
-//     char_move moves[length];
-//     init_char_moves(moves, all_moves.s);
-//     if (player)
-//     {
-//         int maxscore = -10000;
-//         for (int i = 0; i < length; i++)
-//         {
-//             State *tmp = copy_state(state);
-//             push_char_move(tmp, moves[i]);
-//             *num_fn_calls = *num_fn_calls + 1;
-//             int score = minmax_helper(tmp, depth-1, false, num_fn_calls);
-//             if(score > maxscore) maxscore = score;
-//             del_state(tmp);
-//         }
-//         return maxscore;
-//     }
-//     else
-//     {
-//         int minscore = 10000;
-//         for (int i = 0; i < length; i++)
-//         {
-//             State *tmp = copy_state(state);
-//             push_char_move(tmp, moves[i]);
-//             *num_fn_calls = *num_fn_calls + 1;
-//             int score = minmax_helper(tmp, depth-1, true, num_fn_calls);
-//             if(score < minscore) minscore = score;
-//             del_state(tmp);
-//         }
-//         return minscore;
-//     }
-// }
-// char_move minmax(State *state, unsigned short int depth, bool player, bool debug){
-//     int num_fn_calls = 0;
-//     clock_t time_start = clock();
-//     char_move bestmove; bestmove.s[0] = '\0';
-//     char_4096 all_moves = legal_moves(state);
-//     const int length = len_legal_moves(&all_moves);
-//     printf("LEN: %d\n", length);
-//     if (depth == 0 || length==0) return bestmove;
-//     char_move moves[length];
-//     init_char_moves(moves, all_moves.s);
     
-//     if (player)
-//     {
-//         int maxscore = -10000;
-//         for (int i = 0; i < length; i++)
-//         {
-//             State *tmp = copy_state(state);
-//             num_fn_calls++;
-//             push_char_move(tmp, moves[i]);
-//             int score = minmax_helper(tmp, depth-1, false, &num_fn_calls);
-//             if(score > maxscore){
-//                 maxscore = score;
-//                 bestmove = moves[i];
-//             }
-//             del_state(tmp);
-//         }
-//     }
-//     else
-//     {
-//         int minscore = 10000;
-//         for (int i = 0; i < length; i++)
-//         {
-//             State *tmp = copy_state(state);
-//             num_fn_calls++;
-//             push_char_move(tmp, moves[i]);
-//             int score = minmax_helper(tmp, depth-1, true, &num_fn_calls);
-//             if(score < minscore){
-//                 bestmove = moves[i];
-//                 minscore = score;
-//             }
-//             del_state(tmp);
-//         }
-//     }
-    
-//     clock_t time_end = clock();
-//     double elapsed_time = (double)(time_end - time_start) / CLOCKS_PER_SEC;
-//     if (debug)
-//     {
-//         // BUG num_fn_calls have different values on running it again on same fen
-//         printf("ETA: %.6f\n", elapsed_time);
-//         printf("NPS: %.6f\n", ((double)num_fn_calls)/elapsed_time);
-//         printf("TOTAL NODES: %d\n", num_fn_calls);
-//         printf("MOVE: "); print_char_move(bestmove);
-//         putchar('\n');
-//     }
-//     return bestmove;
-// }
+    if (state->whiteTurn){
+        int maxscore = -100000;
+
+        ulld pieces = piece_map(state, state->whiteTurn);
+        int idx = 0;
+        for (int pos_start = 0; pos_start < 64; pos_start++) if ((pieces>>pos_start) & 1){
+            move moves = legal_move_by_square_helper(state, pos_decoder(pos_start));
+            if(moves){
+                for (int pos_end = 0; pos_end < 64; pos_end++) if ((moves>>pos_end) & 1){
+                    if (state->whiteTurn && pos_end / BOARD_SIZE == 7 && ((state->WHITE_PAWN>>pos_start)&one)) {
+                        State *tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'Q');
+                        int score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score > maxscore) {
+                            maxscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'Q';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'N');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score > maxscore){
+                            maxscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'N';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'B');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score > maxscore){
+                            maxscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'B';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'R');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score > maxscore){
+                            maxscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'R';
+                        }
+                        del_state(tmp);
+                    }
+                    else if (!state->whiteTurn && pos_end / BOARD_SIZE == 0 && ((state->BLACK_PAWN>>pos_start)&one)){
+                        State *tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'q');
+                        int score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score > maxscore){
+                            maxscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'q';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'n');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score > maxscore){
+                            maxscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'n';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'b');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score > maxscore){
+                            maxscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'b';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'r');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score > maxscore){
+                            maxscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'r';
+                        }
+                        del_state(tmp);
+                    }
+                    else{
+                        State *tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), '\0');
+                        int score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score > maxscore){
+                            maxscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = '\0';
+                        }
+                        del_state(tmp);
+                    }
+                }
+            }   
+        }
+        
+    }else{
+        int minscore = 100000;
+
+        ulld pieces = piece_map(state, state->whiteTurn);
+        int idx = 0;
+        for (int pos_start = 0; pos_start < 64; pos_start++) if ((pieces>>pos_start) & 1){
+            move moves = legal_move_by_square_helper(state, pos_decoder(pos_start));
+            if(moves){
+                for (int pos_end = 0; pos_end < 64; pos_end++) if ((moves>>pos_end) & 1){
+                    if (state->whiteTurn && pos_end / BOARD_SIZE == 7 && ((state->WHITE_PAWN>>pos_start)&one)) {
+                        State *tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'Q');
+                        int score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score < minscore){
+                            minscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'Q';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'N');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score < minscore){
+                            minscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'N';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'B');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score < minscore){
+                            minscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'B';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'R');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score < minscore){
+                            minscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'R';
+                        }
+                        del_state(tmp);
+                    }
+                    else if (!state->whiteTurn && pos_end / BOARD_SIZE == 0 && ((state->BLACK_PAWN>>pos_start)&one)){
+                        State *tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'q');
+                        int score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score < minscore){
+                            minscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'q';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'n');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score < minscore){
+                            minscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'n';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'b');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score < minscore){
+                            minscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'b';
+                        }
+                        del_state(tmp);
+
+                        tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), 'r');
+                        score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score < minscore){
+                            minscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = 'r';
+                        }
+                        del_state(tmp);
+                    }
+                    else{
+                        State *tmp = copy_state(state);
+                        num_fn_calls = num_fn_calls + 1;
+                        push_move(tmp, pos_decoder(pos_start), pos_decoder(pos_end), '\0');
+                        int score = minmax_helper(tmp, depth-1, &num_fn_calls);
+                        if (score < minscore){
+                            minscore = score;
+                            bestmove.start = pos_decoder(pos_start);
+                            bestmove.end = pos_decoder(pos_end);
+                            bestmove.upgrade_type = '\0';
+                        }
+                        del_state(tmp);
+                    }
+                }
+            }   
+        }
+    }
 
 
-// int alphabeta_helper(State *state, unsigned short int depth, bool player, int alpha, int beta){
-//     char_4096 all_moves = legal_moves(state);
-//     const int length = len_legal_moves(&all_moves);
-//     if (depth == 0 || length==0) return evaluate_board(state);
-//     char_move moves[length];
-//     init_char_moves(moves, all_moves.s);
-//     if (player)
-//     {
-//         int maxscore = -10000;
-//         for (int i = 0; i < length; i++)
-//         {
-//             State *tmp = copy_state(state);
-            
-//             push_char_move(tmp, moves[i]);
-//             int score = alphabeta_helper(tmp, depth-1, false, alpha, beta);
-//             if(score > maxscore) maxscore = score;
-//             del_state(tmp);
-//             if (score>alpha) alpha = score;
-//             if(beta<=alpha) break;
-//         }
-//         return maxscore;
-//     }
-//     else
-//     {
-//         int minscore = 10000;
-//         for (int i = 0; i < length; i++)
-//         {
-//             State *tmp = copy_state(state);
-            
-//             push_char_move(tmp, moves[i]);
-//             int score = alphabeta_helper(tmp, depth-1, true, alpha, beta);
-//             if(score < minscore) minscore = score;
-//             del_state(tmp);
-//             if(score<beta) beta = score;
-//             if(beta<=alpha) break;
-//         }
-//         return minscore;
-//     }
-// }
-// char_move alphabeta(State *state, unsigned short int depth, bool player, int alpha, int beta, bool debug){
-//     clock_t time_start = clock();
-//     char_move bestmove; bestmove.s[0] = '\0';
-//     char_4096 all_moves = legal_moves(state);
-//     const int length = len_legal_moves(&all_moves);
-//     if (depth == 0 || length==0) return bestmove;
-//     char_move moves[length];
-//     init_char_moves(moves, all_moves.s);
+    clock_t time_end = clock();
+    double elapsed_time = (double)(time_end - time_start) / CLOCKS_PER_SEC;
+    if (debug)
+    {
+        printf("ETA: %.6f\n", elapsed_time);
+        printf("NPS: %.6f\n", ((double)num_fn_calls)/elapsed_time);
+        printf("TOTAL NODES: %d\n", num_fn_calls);
+        printf("MOVE: "); print_move_t(bestmove);
+        putchar('\n');
+    }
+    return bestmove;
+}
+
+bool is_capture(State *state, move_list_t mve){
+    if ((piece_map_all(state)>>pos_decoder(mve.end)) & 1) return true;
+    else if ((state->enPassantSquare>>pos_decoder(mve.end)) & 1) return true;
+    return false;
+}
+bool gives_check(State *state, move_list_t mve){
+    State *tmp = copy_state(state);
+    push_move_t(tmp, mve);
+    bool check = is_check(tmp, tmp->whiteTurn);
+    del_state(tmp);
+    return check;
+}
+bool gives_capture(State *state, move_list_t mve){
+    State *tmp = copy_state(state);
+    push_move_t(tmp, mve);
+    bool attacker = is_attackers(state, mve.end, !tmp->whiteTurn);
+    del_state(tmp);
+    return attacker;
+}
+int move_value(void *s, const void *a, const void *b) {
+    State *state = (State *)s;
+    move_list_t *moveA = (move_list_t *)a;
+    move_list_t *moveB = (move_list_t *)b;
+
+    int valueA = 0;
+    int valueB = 0;
+
+    if ((piece_map_all(state)>>pos_decoder(moveA->end)) & 1){
+        valueA = (1000 * piece_value_mod(piece_at(state, moveA->end))) - piece_value_mod(piece_at(state, moveA->start));
+    }else if ((state->enPassantSquare>>pos_decoder(moveA->end)) & 1){
+        valueA = (1000 * piece_value_mod(state->whiteTurn?'p':'P')) - piece_value_mod(piece_at(state, moveB->start));
+    }
+    // else if(gives_check(state, *moveA)) valueA = 100;  takes too much time
+    // else if(gives_capture(state, *moveA)) valueA = 50; takes too much time
+
+    if ((piece_map_all(state)>>pos_decoder(moveB->end)) & 1){
+        valueB = (1000 * piece_value_mod(piece_at(state, moveB->end))) - piece_value_mod(piece_at(state, moveB->start));
+    }else if ((state->enPassantSquare>>pos_decoder(moveA->end)) & 1){
+        valueB = (1000 * piece_value_mod(state->whiteTurn?'p':'P')) - piece_value_mod(piece_at(state, moveB->start));
+    }
+    // else if(gives_check(state, *moveB)) valueB = 100;  takes too much time
+    // else if(gives_capture(state, *moveB)) valueB = 50; takes too much time
+
+    return valueB - valueA; // Sort in descending order
+}
+void order_moves(State* state, move_list_t list[], int n){
+    qsort_s(list, n, sizeof(move_list_t), move_value, state);
+}
+
+
+int alphabeta_helper_no_pv(State *state, unsigned short int depth, int alpha, int beta, int *num_fn_calls, move_list_t *pv){
+    int len_legal_move = len_move_list(state);
+    if (len_legal_move==0){
+        switch (winner(state))
+        {
+            case 1: return 10000+depth;
+            case -1: return -10000-depth;
+            default: return 0;
+        }
+    }
+    else if (depth == 0) return evaluate_board(state);
+
+    move_list_t move_list[len_legal_move]; 
+    set_move_list(state, move_list, len_legal_move);
+    order_moves(state, move_list, len_legal_move);
+
+    int bestmove_idx;
+
+    int best_score;
+    if (state->whiteTurn) best_score = -100000;
+    else best_score = 100000;
+
+    for(int idx = 0; idx < len_legal_move; idx++){
+        State *tmp = copy_state(state);
+        *num_fn_calls = *num_fn_calls + 1;
+        push_move_t(tmp, move_list[idx]);
+        move_list_t pv_tmp[depth-1];
+        int score = alphabeta_helper_no_pv(tmp, depth-1, alpha, beta, num_fn_calls, pv_tmp);
+        if (state->whiteTurn){
+            if (score > best_score){
+                best_score = score;
+                bestmove_idx = idx;
+                for (int i = 1; i < depth; i++) pv[i] = pv_tmp[i-1];
+            }
+            if(score>alpha) alpha = score;
+        }else{
+            if (score < best_score){
+                best_score = score;
+                bestmove_idx = idx;
+                for (int i = 1; i < depth; i++) pv[i] = pv_tmp[i-1];
+            }
+            if(score<beta) beta = score;
+        }
+        del_state(tmp);
+        if(beta<=alpha) break;
+    }
     
-//     if (player)
-//     {
-//         int maxscore = -10000;
-//         for (int i = 0; i < length; i++)
-//         {
-//             State *tmp = copy_state(state);
-            
-//             push_char_move(tmp, moves[i]);
-//             int score = alphabeta_helper(tmp, depth-1, false, alpha, beta);
-//             if(score > maxscore){
-//                 maxscore = score;
-//                 bestmove = moves[i];
-//             }
-//             del_state(tmp);
-//             if (score>alpha) alpha = score;
-//             if(beta<=alpha) break;
-//         }
-//     }
-//     else
-//     {
-//         int minscore = 10000;
-//         for (int i = 0; i < length; i++)
-//         {
-//             State *tmp = copy_state(state);
-            
-//             push_char_move(tmp, moves[i]);
-//             int score = alphabeta_helper(tmp, depth-1, true, alpha, beta);
-//             if(score < minscore){
-//                 bestmove = moves[i];
-//                 minscore = score;
-//             }
-//             del_state(tmp);
-//             if(score<beta) beta = score;
-//             if(beta<=alpha) break;
-//         }
-//     }
+    pv[0] = move_list[bestmove_idx];
+
+    return best_score;
+}
+move_list_t alphabeta_no_pv(State *state, unsigned short int depth, bool debug){
+    clock_t time_start = clock();
+    int bestmove_idx;
+    int num_fn_calls = 0;
+    int alpha = -100000;
+    int beta = 100000;
+
+    move_list_t pv[depth];
     
-//     clock_t time_end = clock();
-//     double elapsed_time = (double)(time_end - time_start) / CLOCKS_PER_SEC;
-//     if (debug)
-//     {
-//         printf("ETA: %.6f\n", elapsed_time);
-//         // printf("NPS: %.6f\n", ((double)num_calls_fn)/elapsed_time);
-//         // printf("TOTAL NODES: %d\n", num_calls_fn);
-//         printf("MOVE: "); print_char_move(bestmove);
-//         putchar('\n');
-//     }
-//     // num_calls_fn=0;
-//     return bestmove;
-// }
+    int best_score = alphabeta_helper_no_pv(state, depth, alpha, beta, &num_fn_calls, pv);
+
+    move_list_t bestmove = pv[0];
+
+    clock_t time_end = clock();
+    double elapsed_time = (double)(time_end - time_start) / CLOCKS_PER_SEC;
+    if (debug)
+    {
+        printf("info score cp %d depth %d nodes %d nps %d time %d pv ", best_score, depth, num_fn_calls, (int)(num_fn_calls/(elapsed_time+.0001)), (int)(elapsed_time*1000)); 
+        print_move_list(pv, depth);
+    }
+    return bestmove;
+}
+
+typedef struct context_qsort{
+    State *state;
+    move_list_t *pv;
+    unsigned short int depth;
+} context_qsort;
+
+int move_value_pv(void *s, const void *a, const void *b) {
+    context_qsort *context = (context_qsort *)s;
+    State *state = context->state;
+    move_list_t *pv = context->pv;
+
+    move_list_t *moveA = (move_list_t *)a;
+    move_list_t *moveB = (move_list_t *)b;
+
+    int valueA = 0;
+    int valueB = 0;
+
+    if (context->depth != 1 && move_list_t_is_equal(moveA, pv)) valueA = 10000;
+    else if ((piece_map_all(state)>>pos_decoder(moveA->end)) & 1)
+        valueA = (1000 * piece_value_mod(piece_at(state, moveA->end))) - piece_value_mod(piece_at(state, moveA->start));
+    else if ((state->enPassantSquare>>pos_decoder(moveA->end)) & 1)
+        valueA = (1000 * piece_value_mod(state->whiteTurn?'p':'P')) - piece_value_mod(piece_at(state, moveB->start));
+    else if(gives_capture(state, *moveA)) valueA = 50; //takes too much time
+    else if(gives_check(state, *moveA)) valueA = 100;  //takes too much time
+
+
+    if (context->depth != 1 && move_list_t_is_equal(moveB, pv)) valueB = 10000;
+    else if ((piece_map_all(state)>>pos_decoder(moveB->end)) & 1)
+        valueB = (1000 * piece_value_mod(piece_at(state, moveB->end))) - piece_value_mod(piece_at(state, moveB->start));
+    else if ((state->enPassantSquare>>pos_decoder(moveA->end)) & 1)
+        valueB = (1000 * piece_value_mod(state->whiteTurn?'p':'P')) - piece_value_mod(piece_at(state, moveB->start));
+    else if(gives_capture(state, *moveB)) valueB = 50; //takes too much time
+    else if(gives_check(state, *moveB)) valueB = 100;  //takes too much time
+
+    return valueB - valueA; // Sort in descending order
+}
+void order_moves_pv(State* state, move_list_t list[], int n, move_list_t *pv, unsigned short int depth){
+    context_qsort context;
+    context.state = state;
+    context.pv = pv;
+    context.depth = depth;
+    qsort_s(list, n, sizeof(move_list_t), move_value_pv, &context);
+}
+
+int quiescence_search(State *state, int alpha, int beta, int *num_fn_calls){
+    int stand_pat = 0;
+    if (is_game_over(state)){
+        switch (winner(state))
+        {
+            case 1: stand_pat = 10000; break;
+            case -1: stand_pat = -10000; break;
+        }
+    }
+    else stand_pat = evaluate_board(state);
+
+    if(stand_pat >= beta) return beta;
+    if(alpha < stand_pat) alpha = stand_pat;
+    
+    int len_legal_move = len_move_list(state);
+    move_list_t move_list[len_legal_move]; 
+    set_move_list(state, move_list, len_legal_move);
+    
+    for(int idx = 0; idx < len_legal_move; idx++)if (is_capture(state, move_list[idx])) // move.is_capture() or move.is_check() or move.is_promotion()
+    {
+        State *tmp = copy_state(state);
+        *num_fn_calls += 1;
+        push_move_t(tmp, move_list[idx]);
+        int score = -quiescence_search(tmp, -beta, -alpha, num_fn_calls);
+        del_state(tmp);
+
+        if (score >= beta) return beta;
+        if (score > alpha) alpha = score;
+    }
+    
+    return alpha;
+}
+
+int alphabeta_helper(State *state, unsigned short int depth, int alpha, int beta, int *num_fn_calls, move_list_t *pv, unsigned short int depth_true){
+    int len_legal_move = len_move_list(state);
+    if (len_legal_move==0){
+        switch (winner(state))
+        {
+            case 1: return 10000+depth;
+            case -1: return -10000-depth;
+            default: return 0;
+        }
+    }
+    else if (depth == 0) return evaluate_board(state);
+
+    // if (depth == 0 || len_legal_move==0) return quiescence_search(state, alpha, beta, num_fn_calls); // TAKING TOO MUCH TIME TODO ADD MAX_DEPTH = 2*depth
+
+    move_list_t move_list[len_legal_move]; 
+    set_move_list(state, move_list, len_legal_move);
+    order_moves_pv(state, move_list, len_legal_move, pv, depth);
+
+    int bestmove_idx;
+
+    int best_score = (state->whiteTurn)?-100000:100000;
+
+    move_list_t pv_tmp[depth-1];
+
+    for(int idx = 0; idx < len_legal_move; idx++){
+        State *tmp = copy_state(state);
+        *num_fn_calls+=1;
+        push_move_t(tmp, move_list[idx]);
+        
+        for (int i = 1; i < depth; i++) pv_tmp[i-1] = pv[i]; // TODO pv sort
+        int score = alphabeta_helper(tmp, depth-1, alpha, beta, num_fn_calls, pv_tmp, depth_true);
+        if (state->whiteTurn){
+            if (score > best_score){
+                best_score = score;
+                bestmove_idx = idx;
+                for (int i = 1; i < depth; i++) pv[i] = pv_tmp[i-1];
+            }
+            if(score>alpha) alpha = score;
+        }else{
+            if (score < best_score){
+                best_score = score;
+                bestmove_idx = idx;
+                for (int i = 1; i < depth; i++) pv[i] = pv_tmp[i-1];
+            }
+            if(score<beta) beta = score;
+        }
+        del_state(tmp);
+        if(beta<=alpha) break;
+    }
+    
+    pv[0] = move_list[bestmove_idx];
+
+    return best_score;
+}
+move_list_t alphabeta(State *state, unsigned short int depth, bool debug){
+    int bestmove_idx;
+    
+    int alpha = -100000;
+    int beta = 100000;
+
+    move_list_t pv[depth];
+
+    move_list_t NullMove; NullMove.start = -1; NullMove.end = -1; NullMove.upgrade_type = '\0';
+    for (int i = 0; i < depth; i++)pv[i] = NullMove;
+
+    for (int i = 1; i <= depth; i++)
+    {
+        int num_fn_calls = 0;
+        clock_t time_start = clock();
+        int best_score = alphabeta_helper(state, i, alpha, beta, &num_fn_calls, pv, i);
+        if (debug)
+        {
+            clock_t time_end = clock();
+            double elapsed_time = (double)(time_end - time_start) / CLOCKS_PER_SEC;
+            printf("info score cp %d depth %d nodes %d nps %d time %d pv ", best_score, i, num_fn_calls, (int)(num_fn_calls/(elapsed_time+.0001)), (int)(elapsed_time*1000)); 
+            // BUG may as pv is garbage if game over before then depth...
+            print_move_list(pv, i);
+        }
+    }
+    return pv[0];
+}
