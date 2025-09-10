@@ -1,0 +1,5 @@
+.vscode
+build
+FastChess.so
+fastchess.egg-info
+__pycache__
